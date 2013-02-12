@@ -1,0 +1,6 @@
+
+def squared():
+   A *= A
+
+A = 4
+squared()
