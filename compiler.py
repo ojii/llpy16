@@ -5,13 +5,7 @@ import os
 import sys
 
 
-def find_source(name):
-    path = os.path.join(*name.split('.')) + '.llpy16'
-    if os.path.exists(path):
-        with open(path) as fobj:
-            return fobj.read(), path
-    else:
-        return None, None
+STDLIB_PATH = os.path.join(os.path.dirname(__file__), 'stdlib')
 
 
 class Counter(object):
@@ -200,22 +194,31 @@ class Assembler(object):
 
 
 class Compiler(object):
-    def __init__(self, assembler, filename=None):
+    def __init__(self, assembler, find_paths, filename=None):
         self.assembler = assembler
-        self.failed = False
-        self.filename = filename
+        self._failed = False
+        self._filename = filename
+        self._find_paths = find_paths
+
+    def _find_source(self, name):
+        for find_path in self._find_paths:
+            path = os.path.join(find_path, *name.split('.')) + '.llpy16'
+            if os.path.exists(path):
+                with open(path) as fobj:
+                    return fobj.read(), path
+        return None, None
 
     def _stderr(self, prefix, msg, node):
         if hasattr(node, 'lineno') and hasattr(node, 'col_offset'):
             info = '%s:%s ' % (node.lineno, node.col_offset)
-            if self.filename:
-                info = '%s:%s' % (self.filename, info)
+            if self._filename:
+                info = '%s:%s' % (self._filename, info)
         else:
             info = ''
         sys.stderr.write('[%s] %s%s\n' % (prefix, info, msg))
 
     def error(self, msg, node=None):
-        self.failed = True
+        self._failed = True
         self._stderr('ERROR', msg, node)
 
     def warn(self, msg, node=None):
@@ -224,7 +227,7 @@ class Compiler(object):
     def compile(self, source):
         node = ast.parse(source)
         self.handle(node)
-        return not self.failed
+        return not self._failed
 
     def handle(self, node):
         handler = getattr(self, 'handle_%s' % node.__class__.__name__, None)
@@ -375,19 +378,19 @@ class Compiler(object):
                 self.error("Asname in import not supported", alias)
             name = alias.name
             if not self.assembler.has_namespace(name):
-                source, filename = find_source(name)
+                source, filename = self._find_source(name)
                 if source is None:
                     self.error("Could not find module %s" % name, alias)
                 else:
                     with self.assembler.namespace(name.split('.')):
-                        compiler = Compiler(self.assembler, filename)
+                        compiler = Compiler(self.assembler, self._find_paths, filename)
                         if not compiler.compile(source):
                             self.error("Error in imported module %s" % name, alias)
 
 
 def main():
     assembler = Assembler()
-    compiler = Compiler(assembler, sys.argv[1])
+    compiler = Compiler(assembler, [STDLIB_PATH, os.path.join(os.path.dirname(__file__), 'examples')], sys.argv[1])
     with open(sys.argv[1]) as fobj:
         source = fobj.read()
     success = compiler.compile(source)
