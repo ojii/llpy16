@@ -30,6 +30,8 @@ class Assembler(object):
         self._counters = defaultdict(Counter)
         self._names = {}
         self._current_namespace = []
+        self._local_aliases = []
+        self._func_sigs = {}
         with self.footer():
             self.goto_label('builtin_halt')
             self.write_label('builtin_halt')
@@ -50,6 +52,12 @@ class Assembler(object):
     def goto_label(self, label):
         self.write_instruction('SET', 'PC', label)
 
+    def pop_stack(self, into):
+        self.write_instruction('SET', into, 'POP')
+
+    def push_stack(self, value):
+        self.write_instruction('SET', 'PUSH', value)
+
     # High Level API
 
     def define_variable(self, name, value):
@@ -57,6 +65,13 @@ class Assembler(object):
         for bit in self._current_namespace:
             target = target[bit]
         target[name] = value
+
+    def define_function(self, name, sig):
+        name = '_'.join(self._current_namespace + [name])
+        self._func_sigs[name] = sig
+
+    def get_func_sig(self, name):
+        return self._func_sigs.get(name, None)
 
     # Helpers
 
@@ -87,12 +102,13 @@ class Assembler(object):
             return node.n
         elif isinstance(node, ast.Name):
             name = node.id
-            if name in self.REGISTERS:
-                return name
             try:
-                return self.get_in_current_namespace(name)
-            except KeyError:
-                raise NameError(name)
+                return self.resolve_registerish(name)
+            except NameError:
+                try:
+                    return self.get_in_current_namespace(name)
+                except KeyError:
+                    raise NameError(name)
         elif isinstance(node, ast.Attribute):
             value = node.value
             namespace = []
@@ -112,6 +128,15 @@ class Assembler(object):
         else:
             raise TypeError()
 
+    def resolve_registerish(self, register):
+        if register in self.REGISTERS:
+            return register
+        elif register in self._local_aliases:
+            return self.REGISTERS[self._local_aliases.index(register)]
+        else:
+            raise NameError()
+
+
     # Context managers
 
     @contextmanager
@@ -125,6 +150,14 @@ class Assembler(object):
         self._current_namespace = bits
         yield
         self._current_namespace = old
+
+    @contextmanager
+    def local_aliases(self, aliases):
+        # used by function defintions
+        old = self._local_aliases
+        self._local_aliases = aliases
+        yield
+        self._local_aliases = old
 
     @contextmanager
     def loop(self, start_label, end_label):
@@ -199,6 +232,24 @@ class Compiler(object):
         self._failed = False
         self._filename = filename
         self._find_paths = find_paths
+        self._func_stack = deque()
+
+    def _resolve_func_call_name(self, node):
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            namespace = []
+            value = node.func
+            while isinstance(value, ast.Attribute):
+                namespace.append(value.attr)
+                value = value.value
+            if not isinstance(value, ast.Name):
+                raise TypeError()
+            namespace.append(value.id)
+            namespace.reverse()
+            return '_'.join(namespace)
+        else:
+            raise TypeError()
 
     def _find_source(self, name):
         for find_path in self._find_paths:
@@ -249,9 +300,10 @@ class Compiler(object):
             target = node.target
         if not isinstance(target, ast.Name):
             return self.error("Invalid assignment, target must be register name.", target)
-        register = target.id
-        if register not in self.assembler.REGISTERS:
-            return self.error("Invalid assignment, target register not found: %s." % register, target)
+        try:
+            register = self.assembler.resolve_registerish(target.id)
+        except NameError:
+            return self.error("Invalid assignment, target register or local alias %s not found" % target.id, target)
         try:
             value = self.assembler.resolve_nameish(node.value)
         except TypeError:
@@ -260,8 +312,35 @@ class Compiler(object):
             return self.error("Invalid assignment, variable %s not found." % exc.message, node.value)
         self.assembler.write_instruction(instruction, register, value)
 
+    def _call_assign(self, node):
+        # handle an assigment with a function call on the right
+        try:
+            func_name = self._resolve_func_call_name(node.value)
+        except TypeError:
+            return self.error("Invalid call func %r, expected name" % node.func, node.func)
+        signature = self.assembler.get_func_sig(func_name)
+        if signature is None:
+            return self.error("Call to undefined function %s" % signature, node)
+        num_targets = len(node.targets)
+        if num_targets != signature['num_ret_values']:
+            return self.error("Function %s has %s return values, but only %s are given" % (func_name, signature['num_ret_values'], num_targets), node)
+        # render the call
+        self.handle(node.value)
+        # pop the stack
+        for target in reversed(node.targets):
+            try:
+                name = self.assembler.resolve_nameish(target)
+            except NameError:
+                return self.error("Cannot assign to name %r, name not found" % target, target)
+            except TypeError:
+                return self.error("Cannot assign to type %r" % target, target)
+            self.assembler.pop_stack(name)
+
     def handle_Assign(self, node):
-        self._assign('SET', node)
+        if isinstance(node.value, ast.Call):
+            self._call_assign(node)
+        else:
+            self._assign('SET', node)
 
     def handle_AugAssign(self, node):
         if isinstance(node.op, ast.Add):
@@ -290,20 +369,9 @@ class Compiler(object):
         self.handle(node.value)
 
     def handle_Call(self, node):
-        if isinstance(node.func, ast.Name):
-            name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            namespace = []
-            value = node.func
-            while isinstance(value, ast.Attribute):
-                namespace.append(value.attr)
-                value = value.value
-            if not isinstance(value, ast.Name):
-                return self.error("Invalid call func %r, expected name" % node.func, node.func)
-            namespace.append(value.id)
-            namespace.reverse()
-            name = '_'.join(namespace)
-        else:
+        try:
+            name = self._resolve_func_call_name(node)
+        except TypeError:
             return self.error("Invalid call func %r, expected name" % node.func, node.func)
         if name.startswith('builtin_'):
             handler = getattr(self.assembler, 'handle_%s' % name, None)
@@ -312,16 +380,64 @@ class Compiler(object):
             else:
                 handler(node, self)
         else:
+            signature = self.assembler.get_func_sig(name)
+            if not signature:
+                return self.error("Undefined function %s" % name, node)
+            # push args to stack
+            if len(node.args) != signature['num_args']:
+                return self.error("Function %s must be called with %s arguments, got %s instead" % (signature['num_args'], len(node.args)), node)
+            for arg in node.args:
+                try:
+                    arg_value = self.assembler.resolve_nameish(arg)
+                except NameError:
+                    return self.error("Function argument %s not found" % arg, arg)
+                except TypeError:
+                    return self.error("Invalid function argument %s" % arg, arg)
+                self.assembler.push_stack(arg_value)
             self.assembler.write_instruction('JSR', name)
 
     def handle_FunctionDef(self, node):
         if node.name.startswith('builtin_'):
             return self.error("Invalid function name %s, the 'builtin_' prefix is reserved for builtins" % node.name, node)
+        num_args = len(node.args.args)
+        if num_args > 7:
+            return self.error("Function definitions may not take more than seven arguments!")
         with self.assembler.footer():
             self.assembler.write_label(node.name)
-            for child in node.body:
-                self.handle(child)
-            self.assembler.goto_label('POP')
+            # pop the next goto
+            self.assembler.pop_stack('J')
+            # unload args
+            aliases = []
+            for i in range(num_args - 1, -1, -1):
+                register = self.assembler.REGISTERS[i]
+                self.assembler.pop_stack(register)
+                aliases.insert(0, node.args.args[i].id)
+            self._func_stack.append({'num_args': num_args, 'num_ret_values': 0})
+            with self.assembler.local_aliases(aliases):
+                for child in node.body:
+                    self.handle(child)
+            self.assembler.goto_label('J')
+            func_sig = self._func_stack.pop()
+            self.assembler.define_function(node.name, func_sig)
+
+    def handle_Return(self, node):
+        if isinstance(node.value, ast.Name):
+            num_ret_values = 1
+            try:
+                register = self.assembler.resolve_nameish(node.value)
+            except NameError:
+                return self.error("Could not resolve name %s" % node.value, node.value)
+            self.assembler.push_stack(register)
+        elif isinstance(node.value, ast.Tuple):
+            num_ret_values = len(node.value.elts)
+            for element in node.value.elts:
+                try:
+                    register = self.assembler.resolve_nameish(element)
+                except NameError:
+                    return self.error("Could not resolve name %s" % element, element)
+                self.assembler.push_stack(register)
+        self._func_stack[-1]['num_ret_values'] = num_ret_values
+
 
     def handle_While(self, node):
         num = self.assembler.get_next_counter('loop')

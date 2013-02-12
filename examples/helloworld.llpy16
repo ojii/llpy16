@@ -1,71 +1,26 @@
 import dev.display
 
-B = dev.display.color_white
-C = dev.display.color_black
-
-A = dev.display.char_H
-dev.display.prepare_character()
-B = 0
-dev.display.display_character()
-
-A = dev.display.char_e
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 1
-dev.display.display_character()
-
-A = dev.display.char_l
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 2
-dev.display.display_character()
-B = 3
-dev.display.display_character()
-
-A = dev.display.char_o
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 4
-dev.display.display_character()
-
-A = dev.display.char_space
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 5
-dev.display.display_character()
-
-A = dev.display.char_W
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 6
-dev.display.display_character()
-
-A = dev.display.char_o
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 7
-dev.display.display_character()
-
-A = dev.display.char_r
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 8
-dev.display.display_character()
-
-A = dev.display.char_l
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 9
-dev.display.display_character()
-
-A = dev.display.char_d
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 10
-dev.display.display_character()
-
-A = dev.display.char_exclamation
-B = dev.display.color_white
-dev.display.prepare_character()
-B = 11
-dev.display.display_character()
+A = dev.display.prepare(dev.display.char_H, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 0)
+A = dev.display.prepare(dev.display.char_e, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 1)
+A = dev.display.prepare(dev.display.char_l, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 2)
+A = dev.display.prepare(dev.display.char_l, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 3)
+A = dev.display.prepare(dev.display.char_o, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 4)
+A = dev.display.prepare(dev.display.char_space, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 5)
+A = dev.display.prepare(dev.display.char_W, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 6)
+A = dev.display.prepare(dev.display.char_o, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 7)
+A = dev.display.prepare(dev.display.char_r, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 8)
+A = dev.display.prepare(dev.display.char_l, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 9)
+A = dev.display.prepare(dev.display.char_d, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 10)
+A = dev.display.prepare(dev.display.char_exclamation, dev.display.color_white, dev.display.color_black)
+dev.display.write(A, 11)

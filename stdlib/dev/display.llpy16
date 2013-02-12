@@ -148,17 +148,12 @@ builtin_define_enumerate(
 )
 
 
-def prepare_character():
-    # sets A to the character code
-    # given the symbol at A
-    # color at B
-    # highlight color at C
-    B <<= 12
-    C <<= 8
-    A |= B
-    A |= C
+def prepare(char_code, color, highlight_color):
+    color <<= 12
+    highlight_color <<=8
+    char_code |= color
+    char_code |= highlight_color
+    return char_code
 
-def display_character():
-    # displays character code A (prepared using prepare_character)
-    # at position 0x8000 + B
-    builtin_memset(0x8000 + B, A)
+def write(char_code, position):
+    builtin_memset(0x8000 + position, char_code)
