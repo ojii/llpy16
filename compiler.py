@@ -3,9 +3,12 @@ from collections import defaultdict, deque
 from contextlib import contextmanager
 import os
 import sys
+import imp
 
 
 STDLIB_PATH = os.path.join(os.path.dirname(__file__), 'stdlib')
+
+FUNC_NAMESPACE_SEP = '__'
 
 
 class Counter(object):
@@ -32,10 +35,11 @@ class Assembler(object):
         self._current_namespace = []
         self._local_aliases = []
         self._func_sigs = {}
+        self._extensions = {}
         with self.footer():
-            self.goto_label('builtin_halt')
-            self.write_label('builtin_halt')
-            self.goto_label('builtin_halt')
+            self.goto_label('__halt')
+            self.write_label('__halt')
+            self.goto_label('__halt')
 
     def get_assembled(self):
         return '\n'.join(['\n'.join(x) for x in [self._body, self._footer]])
@@ -46,7 +50,7 @@ class Assembler(object):
         self._current.append('%s %s' % (instruction, ', '.join(map(str, args))))
 
     def write_label(self, label):
-        label = '_'.join(self._current_namespace + [label])
+        label = FUNC_NAMESPACE_SEP.join(self._current_namespace + [label])
         self._current.append(':%s' % label)
 
     def goto_label(self, label):
@@ -67,13 +71,22 @@ class Assembler(object):
         target[name] = value
 
     def define_function(self, name, sig):
-        name = '_'.join(self._current_namespace + [name])
+        name = FUNC_NAMESPACE_SEP.join(self._current_namespace + [name])
         self._func_sigs[name] = sig
+
+    def define_extension(self, name, handler):
+        self._extensions[FUNC_NAMESPACE_SEP.join(self._current_namespace + [name])] = handler
 
     def get_func_sig(self, name):
         return self._func_sigs.get(name, None)
 
     # Helpers
+
+    def has_extension(self, name):
+        return name in self._extensions
+
+    def handle_extension(self, name, node, compiler):
+        self._extensions[name](self, node, compiler)
 
     def get_next_counter(self, name):
         return self._counters[name].next()
@@ -177,54 +190,6 @@ class Assembler(object):
     def handle_builtin_halt(self, node):
         self.goto_label('builtin_halt')
 
-    def handle_builtin_memset(self, node, compiler):
-        if len(node.args) != 2:
-            return compiler.error("builtin_halt must be called with exactly two arguments", node)
-        location = node.args[0]
-        value = node.args[1]
-        if isinstance(location, ast.BinOp):
-            left = location.left
-            op = location.op
-            right = location.right
-            if not isinstance(op, ast.Add):
-                return compiler.error("Only + operator is allowed in memset arg one binp", op)
-            try:
-                left_value = self.resolve_nameish(left)
-            except (TypeError, NameError):
-                return compiler.error("Invalid left value in memset arg one binop %r" % left, left)
-            try:
-                right_value = self.resolve_nameish(right)
-            except (TypeError, NameError):
-                return compiler.error("Invalid right value in memset arg one binop %r" % right, right)
-            location_value = "%s+%s" % (left_value, right_value)
-        else:
-            try:
-                location_value = self.resolve_nameish(location)
-            except (TypeError, NameError):
-                return compiler.error("Invalid location value in memset %r" % location, location)
-        self.write_instruction('SET', '[%s]' % location_value, self.resolve_nameish(value))
-
-    def handle_builtin_continue(self, node, compiler):
-        if not self._loopstack:
-            return compiler.error("Cannot continue outside loop", node)
-        start, _ = self._loopstack[-1]
-        self.goto_label(start)
-
-    def handle_builtin_break(self, node, compiler):
-        if not self._loopstack:
-            return compiler.error("Cannot break outside loop", node)
-        _, end = self._loopstack[-1]
-        self.goto_label(end)
-
-    def handle_builtin_define_enumerate(self, node, compiler):
-        value = 0
-        for arg in node.args:
-            if isinstance(arg, ast.Name):
-                self.define_variable(arg.id, value)
-            else:
-                compiler.error("Invalid argument to builtin_define_enumerate %r, expected name" % arg, arg)
-            value += 1
-
 
 class Compiler(object):
     def __init__(self, assembler, find_paths, filename=None):
@@ -247,11 +212,23 @@ class Compiler(object):
                 raise TypeError()
             namespace.append(value.id)
             namespace.reverse()
-            return '_'.join(namespace)
+            return FUNC_NAMESPACE_SEP.join(namespace)
         else:
             raise TypeError()
 
-    def _find_source(self, name):
+    def _load_py_source(self, name):
+        for find_path in self._find_paths:
+            path = os.path.join(find_path, *name.split('.')) + '.py'
+            if os.path.exists(path):
+                module = imp.load_source(name, path)
+                for name in getattr(module, 'LLPY16_FUNCS', []):
+                    self.assembler.define_extension(name, getattr(module, name))
+                for name in getattr(module, 'LLPY16_NAMES', []):
+                    self.assembler.define_variable(name, getattr(module, name))
+                return True
+        return False
+
+    def _find_ll_source(self, name):
         for find_path in self._find_paths:
             path = os.path.join(find_path, *name.split('.')) + '.llpy16'
             if os.path.exists(path):
@@ -373,19 +350,15 @@ class Compiler(object):
             name = self._resolve_func_call_name(node)
         except TypeError:
             return self.error("Invalid call func %r, expected name" % node.func, node.func)
-        if name.startswith('builtin_'):
-            handler = getattr(self.assembler, 'handle_%s' % name, None)
-            if handler is None:
-                return self.error("Unknown builtin %s" % name, node.func)
-            else:
-                handler(node, self)
+        if self.assembler.has_extension(name):
+            self.assembler.handle_extension(name, node, self)
         else:
             signature = self.assembler.get_func_sig(name)
             if not signature:
                 return self.error("Undefined function %s" % name, node)
             # push args to stack
             if len(node.args) != signature['num_args']:
-                return self.error("Function %s must be called with %s arguments, got %s instead" % (signature['num_args'], len(node.args)), node)
+                return self.error("Function %s must be called with %s arguments, got %s instead" % (name, signature['num_args'], len(node.args)), node)
             for arg in node.args:
                 try:
                     arg_value = self.assembler.resolve_nameish(arg)
@@ -397,8 +370,8 @@ class Compiler(object):
             self.assembler.write_instruction('JSR', name)
 
     def handle_FunctionDef(self, node):
-        if node.name.startswith('builtin_'):
-            return self.error("Invalid function name %s, the 'builtin_' prefix is reserved for builtins" % node.name, node)
+        if FUNC_NAMESPACE_SEP in node.name:
+            return self.error("Invalid function name %s, function names may not contain '%s'" % (node.name, FUNC_NAMESPACE_SEP), node)
         num_args = len(node.args.args)
         if num_args > 7:
             return self.error("Function definitions may not take more than seven arguments!")
@@ -494,14 +467,15 @@ class Compiler(object):
                 self.error("Asname in import not supported", alias)
             name = alias.name
             if not self.assembler.has_namespace(name):
-                source, filename = self._find_source(name)
-                if source is None:
-                    self.error("Could not find module %s" % name, alias)
-                else:
-                    with self.assembler.namespace(name.split('.')):
-                        compiler = Compiler(self.assembler, self._find_paths, filename)
-                        if not compiler.compile(source):
-                            self.error("Error in imported module %s" % name, alias)
+                with self.assembler.namespace(name.split('.')):
+                    if not self._load_py_source(name):
+                        source, filename = self._find_ll_source(name)
+                        if source is None:
+                            self.error("Could not find module %s" % name, alias)
+                        else:
+                            compiler = Compiler(self.assembler, self._find_paths, filename)
+                            if not compiler.compile(source):
+                                self.error("Error in imported module %s" % name, alias)
 
 
 def main():
