@@ -1,0 +1,5 @@
+import constants
+import dev.display
+
+dev.display.configure(color=constants.color_white, highlight_color=constants.color_black)
+dev.display.write_static("Hello World!", 0x8000)

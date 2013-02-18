@@ -1,0 +1,7 @@
+import dev.cpu
+import dev.drivers
+
+def map_screen():
+    dev.drivers.initialize()
+    A = 0
+    cpu.interrupt(dev.drivers.display_monitor)
