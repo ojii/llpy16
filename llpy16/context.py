@@ -6,6 +6,14 @@ import os
 import imp
 
 
+class Function(object):
+    def __init__(self, name, args, node, deferred=True):
+        self.name = name
+        self.args = args
+        self.node = node
+        self.deferred = deferred
+
+
 class Namespace(object):
     def __init__(self):
         self.constants = {}
@@ -75,8 +83,10 @@ class Context(object):
     def get_constant(self, name):
         return self.current_namespace.constants[name]
 
-    def define_function(self, name):
-        self.current_namespace.functions[name] = self.expand_name(self._current_namespace, name)
+    def define_function(self, name, args, node, deferred=True):
+        expanded_name = self.expand_name(name)
+        self.current_namespace.functions[name] = Function(expanded_name, args, node, deferred)
+        return expanded_name
 
     def get_function(self, name):
         return self.current_namespace.functions[name]
@@ -96,7 +106,7 @@ class Context(object):
                 try:
                     return self.get_function(name)
                 except KeyError:
-                    raise NameError(name)
+                    raise NameError('%s.%s' % (namespace, name))
             args, kwargs = self._call_to_args_kwargs(node)
             ext(assembler, self, *args, **kwargs)
 

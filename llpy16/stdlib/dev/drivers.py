@@ -24,7 +24,7 @@ vector_display = 'vectory_display'
 GENERIC_CLOCK_ID = (0x12d0, 0xb402)
 FLOPPY_DRIVE_ID = (0x4fd5, 0x24c5)
 GENERIC_KEYBOARD_ID = (0x30cf, 0x7406)
-DISPLAY_MONITOR_ID = (0x7349, 0xf614)
+DISPLAY_MONITOR_ID = (0x7349, 0xf615)
 SLEEP_CHAMBER_ID = (0x30e4, 0x1d9d)
 VECTOR_DISPLAY_ID = (0x42ba, 0xbf3c)
 
@@ -64,3 +64,6 @@ def initialize(assembler, context):
             with assembler.label(_(label)):
                 assembler.SET('[%s]' % _(data), 'J')
                 assembler.goto_label(cont)
+            # write data labels
+            with assembler.label(_(data)):
+                assembler.write_instruction('DAT', 0xFFFF)

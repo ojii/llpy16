@@ -1,7 +1,6 @@
 import dev.cpu
 import dev.drivers
 
-def map_screen():
+def map_screen(B):
     dev.drivers.initialize()
-    A = 0
-    cpu.interrupt(dev.drivers.display_monitor)
+    dev.cpu.interrupt(dev.drivers.display_monitor, 0)

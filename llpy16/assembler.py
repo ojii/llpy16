@@ -41,7 +41,7 @@ class Assembler(object):
             self.goto_label(self.halt_label)
 
     def get_assembled(self):
-        program = self._body + [y for x in self._labels for y in x + ['']]
+        program = self._body + ['', ''] + [y for x in self._labels for y in x + ['']]
         return '\n'.join(program)
 
     # Low Level API

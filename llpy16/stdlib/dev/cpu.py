@@ -4,5 +4,7 @@ LLPY16_EXTS = [
     'interrupt'
 ]
 
-def interrupt(assembler, context, hardware_id):
-    assembler.HWI(hardware_id)
+def interrupt(assembler, context, hardware_id, number):
+    with assembler.preserve('A'):
+        assembler.SET('A', number)
+        assembler.HWI(hardware_id)

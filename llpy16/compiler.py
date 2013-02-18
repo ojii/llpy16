@@ -54,9 +54,34 @@ class Compiler(object):
         self.handle(node.value)
 
     def handle_Call(self, node):
-        function_name = self.context.resolve_function(node, self.assembler)
-        if function_name:
-            self.assembler.JSR(function_name)
+        def resolve(thing):
+            if isinstance(thing, ast.Num):
+                return thing.n
+            elif isinstance(thing, ast.Name):
+                return thing.id
+            else:
+                raise TypeError(thing)
+        function = self.context.resolve_function(node, self.assembler)
+        if function:
+            # handle args
+            for arg, into in zip(node.args, function.args):
+                self.assembler.SET(into, resolve(arg))
+            # call function/subroutine
+            self.assembler.JSR(function.name)
+            # handle deferred
+            if function.deferred:
+                self._write_function(function.name, function.node)
+                function.deferred = False
+
+    def handle_FunctionDef(self, node):
+        args = [arg.id for arg in node.args.args]
+        name = self.context.define_function(node.name, args, node)
+
+    def _write_function(self, name, node):
+        with self.assembler.label(name):
+            for child in node.body:
+                self.handle(child)
+            self.assembler.return_from_subroutine()
 
 
 def do_compile(source, paths=None):

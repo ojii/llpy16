@@ -1,5 +1,6 @@
 import constants
 import dev.display
+import mem
 
-dev.display.configure(color=constants.color_white, highlight_color=constants.color_black)
-dev.display.write_static("Hello World!", 0x8000)
+mem.set_string(0x7000, "Hello World!")
+dev.display.map_screen(0x7000)

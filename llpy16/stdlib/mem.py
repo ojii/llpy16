@@ -1,6 +1,16 @@
 # -*- coding: utf-8 -*-
 import ast
 
+LLPY16_EXTS = [
+    'set_string',
+]
+
+def set_string(assembler, context, start, text):
+    for offset, char in enumerate(text):
+        assembler.SET('[%s]' % (start + offset), ord(char))
+
+# OLD
+
 LLPY16_FUNCS = ['set']
 
 def set(assembler, node, compiler):
