@@ -4,6 +4,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 import os
 import imp
+from llpy16.assembler import hexify
 
 
 class Function(object):
@@ -29,6 +30,16 @@ class Register(object):
 
     def __str__(self):
         return self.name
+
+
+class RegisterOperation(object):
+    def __init__(self, left, right, operator):
+        self.left = left
+        self.right = right
+        self.operator = operator
+
+    def __str__(self):
+        return '%s %s %s' % (hexify(self.left), self.operator, hexify(self.right))
 
 
 class Context(object):
@@ -85,8 +96,8 @@ class Context(object):
 
     def define_function(self, name, args, node, deferred=True):
         expanded_name = self.expand_name(name)
-        self.current_namespace.functions[name] = Function(expanded_name, args, node, deferred)
-        return expanded_name
+        self.current_namespace.functions[name] = function = Function(expanded_name, args, node, deferred)
+        return function
 
     def get_function(self, name):
         return self.current_namespace.functions[name]
@@ -98,7 +109,7 @@ class Context(object):
         return self.current_namespace.configs[key]
 
     def resolve_function(self, node, assembler):
-        name, namespace = self._resolve_name(node.func)
+        name, namespace = self.resolve_name(node.func)
         with self.namespace(namespace):
             try:
                 ext = self.get_extension(name)
@@ -128,7 +139,7 @@ class Context(object):
     def current_namespace(self):
         return self._namespaces[self._current_namespace]
 
-    def _resolve_name(self, thing):
+    def resolve_name(self, thing):
         if isinstance(thing, ast.Name):
             name = thing.id
             namespace = self._current_namespace
@@ -160,8 +171,23 @@ class Context(object):
                 return list(map(_get_value, thing.elts))
             elif isinstance(thing, ast.Dict):
                 return {_get_value(key): _get_value(value) for key, value in zip(thing.keys, thing.values)}
+            elif isinstance(thing, ast.BinOp):
+                left = _get_value(thing.left)
+                right = _get_value(thing.right)
+                if isinstance(thing.op, ast.Add):
+                    operator = '+'
+                elif isinstance(thing.op, ast.Sub):
+                    operator = '-'
+                else:
+                    raise TypeError(thing.op)
+                if isinstance(left, int) and isinstance(right, int):
+                    return (left + right) if operator == '+' else (left - right)
+                elif isinstance(left, (Register, int)) and isinstance(right, (Register, int)):
+                    return RegisterOperation(left, right, operator)
+                else:
+                    raise TypeError("%r %s %r" % left, operator, right)
             else:
-                name, namespace = self._resolve_name(thing)
+                name, namespace = self.resolve_name(thing)
                 if name == name.upper() and len(name) == 1 and namespace == self._current_namespace:
                     return Register(name)
                 else:

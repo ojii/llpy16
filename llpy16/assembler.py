@@ -21,10 +21,11 @@ def special(value, doc=''):
 def hexify(thing):
     if isinstance(thing, int):
         return '0x%04x' % thing
-    elif thing.isdigit():
-        return '0x%04x' % int(thing)
-    elif thing[0] == '[' and thing[-1] == ']' and thing[1:-1].isdigit():
-        return '[0x%04x]' % int(thing[1:-1])
+    elif isinstance(thing, basestring):
+        if thing.isdigit():
+            return '0x%04x' % int(thing)
+        elif thing[0] == '[' and thing[-1] == ']' and thing[1:-1].isdigit():
+            return '[0x%04x]' % int(thing[1:-1])
     return str(thing)
 
 

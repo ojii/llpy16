@@ -19,13 +19,17 @@ class UnsupportedNode(CompilerError):
     def __init__(self, node):
         super(UnsupportedNode, self).__init__("Unsupported node type %r" % node, node)
 
+def get_register(node, assembler):
+    if not isinstance(node, ast.Name):
+        raise CompilerError("Invalid target %r" % node, node)
+    register = node.id
+    if register not in assembler.registers:
+        raise CompilerError("Invalid register %r" % register, node)
+    return register
 
-def register_or_number(node, assembler):
+def get_register_or_number(node, assembler):
     if isinstance(node, ast.Name):
-        value = node.id
-        if value not in assembler.registers:
-            raise CompilerError("Invalid register %r" % value, node)
-        return value
+        return get_register(node, assembler)
     elif isinstance(node, ast.Num):
         return node.n
     else:
@@ -72,6 +76,8 @@ class Compiler(object):
                 return thing.n
             elif isinstance(thing, ast.Name):
                 return thing.id
+            elif isinstance(thing, ast.List):
+                return '[%s]' % resolve(thing.elts[0])
             else:
                 raise TypeError(thing)
         function = self.context.resolve_function(node, self.assembler)
@@ -83,29 +89,58 @@ class Compiler(object):
             self.assembler.JSR(function.name)
             # handle deferred
             if function.deferred:
-                self._write_function(function.name, function.node)
+                self.write_function(function)
                 function.deferred = False
 
     def handle_FunctionDef(self, node):
         args = [arg.id for arg in node.args.args]
-        name = self.context.define_function(node.name, args, node)
+        function = self.context.define_function(node.name, args, node)
+        if node.decorator_list:
+            if len(node.decorator_list) > 1:
+                raise CompilerError("Functions can only have one decorator", node)
+            self.write_function(function)
+            decorator = node.decorator_list[0]
+            tree = ast.Call(
+                func=decorator,
+                args=[ast.List(elts=[ast.Name(id=node.name)])]
+            )
+            self.handle(tree)
 
-    def _write_function(self, name, node):
-        with self.assembler.label(name):
-            for child in node.body:
+    def write_function(self, function):
+        with self.assembler.label(function.name):
+            for child in function.node.body:
                 self.handle(child)
             self.assembler.return_from_subroutine()
 
     def handle_Assign(self, node):
-        target = node.targets[0]
-        if not isinstance(target, ast.Name):
-            raise CompilerError("Invalid target %r" % target, target)
-        register = target.id
-        if register not in self.assembler.registers:
-            raise CompilerError("Invalid register %r" % register, target)
-        value = register_or_number(node.value, self.assembler)
+        register = get_register(node.targets[0], self.assembler)
+        value = get_register_or_number(node.value, self.assembler)
         self.assembler.SET(register, value)
 
+    def handle_AugAssign(self, node):
+        if isinstance(node.op, ast.Add):
+            instruction = self.assembler.ADD
+        elif isinstance(node.op, ast.Sub):
+            instruction = self.assembler.SUB
+        elif isinstance(node.op, ast.Mult):
+            instruction = self.assembler.MUL
+        elif isinstance(node.op, ast.Div):
+            instruction = self.assembler.DIV
+        elif isinstance(node.op, ast.LShift):
+            instruction = self.assembler.SHL
+        elif isinstance(node.op, ast.RShift):
+            instruction = self.assembler.SHR
+        elif isinstance(node.op, ast.BitOr):
+            instruction = self.assembler.BOR
+        elif isinstance(node.op, ast.BitAnd):
+            instruction = self.assembler.AND
+        elif isinstance(node.op, ast.BitXor):
+            instruction = self.assembler.XOR
+        else:
+            raise CompilerError("Invalid augmented assignment, operator %r not supported" % node.op, node.op)
+        register = get_register(node.target, self.assembler)
+        value = get_register_or_number(node.value, self.assembler)
+        instruction(register, value)
 
 
 def do_compile(source, paths=None):
