@@ -33,6 +33,11 @@ class Assembler(object):
     program_counter = 'PC'
     stack_pop_instruction = 'POP'
     stack_push_instruction = 'PUSH'
+    registers = [
+        'A', 'B', 'C',
+        'X', 'Y', 'Z',
+        'I', 'J'
+    ]
 
     def __init__(self):
         self._current = self._body = []

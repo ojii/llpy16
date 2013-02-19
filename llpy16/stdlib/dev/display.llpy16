@@ -3,4 +3,4 @@ import dev.drivers
 
 def map_screen(B):
     dev.drivers.initialize()
-    dev.cpu.interrupt(dev.drivers.display_monitor, 0)
+    dev.cpu.interrupt([dev.drivers.display_monitor], 0)

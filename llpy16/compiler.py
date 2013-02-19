@@ -20,6 +20,19 @@ class UnsupportedNode(CompilerError):
         super(UnsupportedNode, self).__init__("Unsupported node type %r" % node, node)
 
 
+def register_or_number(node, assembler):
+    if isinstance(node, ast.Name):
+        value = node.id
+        if value not in assembler.registers:
+            raise CompilerError("Invalid register %r" % value, node)
+        return value
+    elif isinstance(node, ast.Num):
+        return node.n
+    else:
+        raise CompilerError("Invalid type %r, expected number or register" % node, node)
+
+
+
 class Compiler(object):
     def __init__(self, assembler, context):
         self.assembler = assembler
@@ -82,6 +95,17 @@ class Compiler(object):
             for child in node.body:
                 self.handle(child)
             self.assembler.return_from_subroutine()
+
+    def handle_Assign(self, node):
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            raise CompilerError("Invalid target %r" % target, target)
+        register = target.id
+        if register not in self.assembler.registers:
+            raise CompilerError("Invalid register %r" % register, target)
+        value = register_or_number(node.value, self.assembler)
+        self.assembler.SET(register, value)
+
 
 
 def do_compile(source, paths=None):

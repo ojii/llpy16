@@ -2,5 +2,5 @@ import constants
 import dev.display
 import mem
 
-mem.set_string(0x7000, "Hello World!")
-dev.display.map_screen(0x7000)
+mem.set_string(0x1000, "Hello World!", constants.color_white, constants.color_black)
+dev.display.map_screen(0x1000)

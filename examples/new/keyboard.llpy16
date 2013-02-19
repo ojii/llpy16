@@ -1,0 +1,24 @@
+import constants
+import dev.keyboard
+import dev.display
+import mem
+
+I = 0
+
+@dev.keyboard.on_interrupt
+def interrupt_handler():
+    if C == 0x10:
+        handle_backspace()
+    else:
+        handle_input()
+
+def handle_backspace():
+    A = 0xf000
+    A |= ' '
+    mem.set(0x8000 + I, A)
+
+def handle_input():
+    A = 0xf000
+    A |= C
+    mem.set(0x8000 + I, A)
+    I += 1
