@@ -102,7 +102,7 @@ class Compiler(object):
             decorator = node.decorator_list[0]
             tree = ast.Call(
                 func=decorator,
-                args=[ast.List(elts=[ast.Name(id=node.name)])]
+                args=[ast.List(elts=[ast.Name(id=function.name)])]
             )
             self.handle(tree)
 

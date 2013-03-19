@@ -195,7 +195,11 @@ class Context(object):
                         try:
                             return self.get_constant(name)
                         except KeyError:
-                            raise NameError(name)
+                            try:
+                                return self.get_function(name).name
+                            except KeyError:
+                                print self.current_namespace.functions
+                                raise NameError(name)
         args = map(_get_value, node.args)
         kwargs = {keyword.arg: _get_value(keyword.value) for keyword in node.keywords}
         return args, kwargs

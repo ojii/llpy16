@@ -1,3 +1,4 @@
-import static
+import constants
+import dev.display
 
-static.write('Hello World!', 0, white, black)
+dev.display.write_static("Hello World!", 0x8000, constants.color_white, constants.color_black)
